@@ -1,4 +1,7 @@
 # encoding=utf-8
+#
+
+
 import os
 import re
 import json
@@ -19,8 +22,10 @@ from keras.utils.data_utils import Sequence
 from keras.utils import multi_gpu_model
 
 from nl2sql_model.utils import read_data, read_tables, SQL, MultiSentenceTokenizer, Query, Question, Table
-from nl2sql_model.utils.optimizer import RAdam  # nl2sql_model 到底是个啥？  一个安装包吗？
+from nl2sql_model.utils.optimizer import RAdam
 
+
+# ---------------------------------加载数据---------------------------------
 train_table_file = 'G:\\datas\\nl2sql\\TableQA-master\\train\\train.tables.json'
 train_data_file = 'G:\\datas\\nl2sql\\TableQA-master\\train\\train.json'
 
@@ -34,8 +39,11 @@ test_data_file = 'G:\\datas\\nl2sql\\TableQA-master\\test\\test.json'
 bert_model_path = 'G:\\datas\\nl2sql\\chinese_wwm_L-12_H-768_A-12'
 paths = get_checkpoint_paths(bert_model_path)  # 该类作用是获得保存节点文件的状态
 
+# ---------------------------------数据预处理---------------------------------
 train_tables = read_tables(train_table_file)
-train_data = read_data(train_data_file, train_tables)  # def read_data(data_file, tables: Tables):
+
+# 此处进行连表操作
+train_data = read_data(train_data_file, train_tables)  # # 将question/sql/table关联到一起
 
 val_tables = read_tables(val_table_file)
 val_data = read_data(val_data_file, val_tables)
@@ -50,6 +58,8 @@ print(sample_query.sql)
 print(sample_query)
 
 len(train_data), len(val_data), len(test_data)
+
+
 def remove_brackets(s):  # 移除特殊符号
     '''
     Remove brackets [] () from text
@@ -57,7 +67,7 @@ def remove_brackets(s):  # 移除特殊符号
     return re.sub(r'[\(\（].*[\)\）]', '', s)
 
 
-class QueryTokenizer(MultiSentenceTokenizer):  # 继承了MultiSentenceTokenizer
+class QueryTokenizer(MultiSentenceTokenizer):  # 继承了MultiSentenceTokenizer  任务有二：1.tokenizer 2.encoder
     """
     Tokenize query (question + table header) and encode to integer sequence.
     Using reserved tokens [unused11] and [unused12] for classification
@@ -87,6 +97,7 @@ class QueryTokenizer(MultiSentenceTokenizer):  # 继承了MultiSentenceTokenizer
 
         header = [query.table.header[i] for i in col_orders]  # 迭代出所有列（名字，类型）  #[('影片名称', 'text'), ('周票房（万）', 'real'), ('票房占比（%）', 'real'), ('场均人次', 'real')]
 
+        # 数据预处理header，处理成为  [['[unused11]', '影', '片', '名', '称'], ['[unused12]', '周', '票', '房'], ['[unused12]', '票', '房', '占', '比']]
         for col_name, col_type in header:
             col_type_token = self.col_type_token_dict[col_type]
             col_name = remove_brackets(col_name)  # 移除列名中所有特殊字符[\(\（].*[\)\）]
@@ -100,7 +111,7 @@ class QueryTokenizer(MultiSentenceTokenizer):  # 继承了MultiSentenceTokenizer
     def encode(self, query: Query, col_orders=None):
         tokens, tokens_lens = self.tokenize(query, col_orders)
         #['[CLS]', '我', '想', '你', '帮', '我', '查', '一', '下', '第', '四', '周', '大', '黄', '蜂', '，', '还', '有', '密', '室', '逃', '生', '这', '两', '部', '电', '影', '票', '房', '的', '占', '比', '加', '起', '来', '会', '是', '多', '少', '来', '着', '[SEP]', '[unused11]', '影', '片', '名', '称', '[SEP]', '[unused12]', '周', '票', '房', '[SEP]', '[unused12]', '票', '房', '占', '比', '[SEP]', '[unused12]', '场', '均', '人', '次', '[SEP]']
-        # tokens_lens :[42, 6, 5, 6, 6]
+        # tokens_lens :[42, 6, 5, 6, 6]  ？  什么意思？
         token_ids = self._convert_tokens_to_ids(
             tokens)  # token_ids = self._convert_tokens_to_ids(tokens)，将所有汉字用语料库中的id表示
         segment_ids = [0] * len(token_ids)   # 为啥只是简单的相乘？
@@ -304,6 +315,7 @@ for name, data in sample_batch_outputs.items():
     print(data)
 
 ###########build model##################
+# ---------------------------------构建模型---------------------------------
 # output sizes
 num_sel_agg = len(SQL.agg_sql_dict) + 1
 num_cond_op = len(SQL.op_sql_dict) + 1
@@ -316,7 +328,7 @@ print("num_cond_conn_op:{}".format(num_cond_conn_op))
 def seq_gather(x):
     seq, idxs = x
     idxs = K.cast(idxs, 'int32')
-    return K.tf.batch_gather(seq, idxs)
+    return K.tf.batch_gather(seq, idxs)  #通过indices获取params下标的张量。
 
 
 bert_model = load_trained_model_from_checkpoint(paths.config, paths.checkpoint, seq_len=None)  # 加载模型的配置信息，预训练生成的模型
@@ -347,10 +359,10 @@ p_sel_agg = Dense(num_sel_agg, activation='softmax', name='output_sel_agg')(x_fo
 x_for_cond_op = Concatenate(axis=-1)([x_for_header, p_sel_agg])
 p_cond_op = Dense(num_cond_op, activation='softmax', name='output_cond_op')(x_for_cond_op)
 
-# 构建模型
+# 构建模型`
 model = Model(
-    [inp_token_ids, inp_segment_ids, inp_header_ids, inp_header_mask],
-    [p_cond_conn_op, p_sel_agg, p_cond_op]
+    [inp_token_ids, inp_segment_ids, inp_header_ids, inp_header_mask],  # 输入  输入文本语句+表格的列名
+    [p_cond_conn_op, p_sel_agg, p_cond_op]    #  输出  sql 条件链接，聚合，连接选项
 )
 
 '''
@@ -364,6 +376,8 @@ if NUM_GPUS > 1:
 
 learning_rate = 1e-5
 
+
+# 设定损失函数、学习率。
 model.compile(
     loss='sparse_categorical_crossentropy',
     optimizer=RAdam(lr=learning_rate)
@@ -413,7 +427,7 @@ class EvaluateCallback(Callback):  # 模型评估
         pred_sqls = []
         for batch_data in self.val_dataseq:
             header_lens = np.sum(batch_data['input_header_mask'], axis=-1)
-            preds_cond_conn_op, preds_sel_agg, preds_cond_op = self.model.predict_on_batch(batch_data)
+            preds_cond_conn_op, preds_sel_agg, preds_cond_op = self.model.predict_on_batch(batch_data)   # 预测结果显示部分
             sqls = outputs_to_sqls(preds_cond_conn_op, preds_sel_agg, preds_cond_op,
                                    header_lens, val_dataseq.label_encoder)
             pred_sqls += sqls
@@ -485,12 +499,14 @@ val_dataseq = DataSequence(
     label_encoder=label_encoder,
     is_train=False,
     shuffle_header=False,
-    max_len=160,
+    max_len=160,    # 将句子最大长度设置160
     shuffle=False,
     batch_size=batch_size
 )
 
-model_path = 'task1_best_model.h5'
+# model_path = 'task1_best_model.h5'
+model_path = 'G:\\models\\task1_best_model.h5'
+
 callbacks = [
     EvaluateCallback(val_dataseq),
     ModelCheckpoint(filepath=model_path,
@@ -500,8 +516,11 @@ callbacks = [
                     save_weights_only=True)
 ]
 
-history = model.fit_generator(train_dataseq, epochs=num_epochs, callbacks=callbacks)
 
+#  模型训练
+# history = model.fit_generator(train_dataseq, epochs=num_epochs, callbacks=callbacks)  # 将模型训练部分暂时注释掉，调用已经训练好的模型
+
+# ps 因为之前已有模型骨架了，这里仅仅需要加载参数即可
 model.load_weights(model_path)
 
 # make prediction for task1
@@ -518,15 +537,15 @@ test_dataseq = DataSequence(
 
 pred_sqls = []
 
-for batch_data in tqdm(test_dataseq):
+for batch_data in tqdm(test_dataseq):   # Python之tqdm主要作用是用于显示进度，但是内部也有处理的语句啊
     header_lens = np.sum(batch_data['input_header_mask'], axis=-1)
     preds_cond_conn_op, preds_sel_agg, preds_cond_op = model.predict_on_batch(batch_data)
     sqls = outputs_to_sqls(preds_cond_conn_op, preds_sel_agg, preds_cond_op,
                            header_lens, val_dataseq.label_encoder)
     pred_sqls += sqls
 
-task1_output_file = 'task1_output.json'  # 将模型1预测的sql（部分）保存下来。可以不保存吗？存储到内存中？
-with open(task1_output_file, 'w') as f:
+task1_output_file = 'task1_output.json'  # 将模型1预测的sql（部分）保存下来。可以不保存吗？存储到内存中？为什么这个json这么长？3000多条？前面的代码应该已经写了
+with open(task1_output_file, 'w') as f:   # 修改json文件
     for sql in pred_sqls:
-        json_str = json.dumps(sql, ensure_ascii=False)
+        json_str = json.dumps(sql, ensure_ascii=False)   # 将一个python格式的转为json
         f.write(json_str + '\n')

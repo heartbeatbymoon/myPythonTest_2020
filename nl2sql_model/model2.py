@@ -30,7 +30,8 @@ test_data_file = 'G:\\datas\\nl2sql\\TableQA-master\\test\\test.json'
 bert_model_path = 'G:\\datas\\nl2sql\\chinese_wwm_L-12_H-768_A-12'
 paths = get_checkpoint_paths(bert_model_path)  # 该类作用是获得保存节点文件的状态
 
-task1_file = '../submit/task1_output.json'  # 这是干什么的？？？难道是第一个模型输出产生的配置文件？这是个预留的bug要传参
+# task1_file = '../submit/task1_output.json'  # 这是干什么的？？？难道是第一个模型输出产生的配置文件？这是个预留的bug要传参
+task1_file = 'task1_output.json'  # 这是干什么的？？？难道是第一个模型输出产生的配置文件？这是个预留的bug要传参
 
 train_tables = read_tables(train_table_file)
 train_data = read_data(train_data_file, train_tables)
@@ -158,9 +159,9 @@ class CandidateCondsExtractor:
 
             for col_id, (col_name, col_type) in enumerate(query.table.header):
                 value_in_column = self.extract_values_from_column(query, col_id)
-                if col_type == 'text':
+                if col_type == 'text':        # 后续需要更改
                     cond_values = value_in_column
-                elif col_type == 'real':
+                elif col_type == 'real':     # 后续需要更改
                     if len(value_in_column) == 1:
                         cond_values = value_in_column + value_in_question
                     else:
@@ -300,6 +301,7 @@ class QuestionCondPairsDataset:  # where 条件对
 
 task1_result = load_json(task1_file)
 
+# 这一段为什么运行时间这么长？
 tr_qc_pairs = QuestionCondPairsDataset(train_data,
                                        candidate_extractor=CandidateCondsExtractor(share_candidates=False))
 

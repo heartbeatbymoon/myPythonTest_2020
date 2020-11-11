@@ -227,8 +227,8 @@ class MultiSentenceTokenizer(Tokenizer):
         return token_ids, segment_ids
 
 
-class QueryTokenizer(Tokenizer):
-    col_type_token_dict = {'text': '[unused11]', 'real': '[unused12]'}   # 据说这里做了一个无监督学习，将字段分为两种类型：文本、数字
+class QueryTokenizer(Tokenizer):   # 继承了keras-bert 的Tokenizer
+    col_type_token_dict = {'text': '[unused11]', 'real': '[unused12]'}   # 相当于一个简单的语料库？，据说这里做了一个无监督学习，将字段分为两种类型：文本、数字
 
     def _tokenize(self, text):
         r = []
@@ -250,7 +250,7 @@ class QueryTokenizer(Tokenizer):
             packed_tokens_lens.append(len(tokens) + 2)
         return packed_tokens_list, packed_tokens_lens
 
-    def encode(self, query: Query):
+    def encode(self, query: Query):  #  这里都编码好了？仅仅是query？
         tokens, tokens_lens = self.tokenize(query)
         token_ids = self._convert_tokens_to_ids(tokens)
         segment_ids = [0] * len(token_ids)
@@ -280,8 +280,8 @@ def read_tables(table_file):   # 读取train.table.json中的内容，
     return tables
 
 
-def read_data(data_file, tables: Tables):   #读取train.json中的内容,获取所有的查询项目
-    queries = []
+def read_data(data_file, tables: Tables):   #读取train.json中的内容,获取所有的查询项目,将表文件与查询文件结合起来
+    queries = []   # 将question/sql/table关联到一起
     with open(data_file, encoding='utf-8') as f:
         for line in f:       # 迭代所有行数据
             data = json.loads(line)
